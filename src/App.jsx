@@ -23,7 +23,9 @@ import {
   XCircle,
   Clock,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  Download
 } from 'lucide-react';
 
 const REGIONS = [
@@ -36,8 +38,8 @@ const REGIONS = [
       'Dehqonobod t.', 
       'G‘uzor t.', 
       'Ko‘kdala t.', 
-      'Qamashi t.', 
-      'Qarshi t.', 
+      'Kamashi t.', 
+      'Karshi t.', 
       'Koson t.', 
       'Kasbi t.', 
       'Kitob t.', 
@@ -53,13 +55,13 @@ const REGIONS = [
 
 export default function App() {
   const [role, setRole] = useState('user'); 
-  const [activeTab, setActiveTab] = useState('reports'); // 'reports' yoki 'gallery'
+  const [activeTab, setActiveTab] = useState('reports');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
 
   const [reports, setReports] = useState(() => {
-    const saved = localStorage.getItem('eco_reports_qashqadaryo_v3');
+    const saved = localStorage.getItem('eco_reports_qashqadaryo_v4');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -70,19 +72,20 @@ export default function App() {
     cleaningArea: '',
     flowersCount: '',
     reporterName: '',
-    photoBase64: '',
-    cadastrePdfName: '',
-    govServicePdfName: ''
+    photos: [], // Bir nechta rasmlar masivi (base64)
+    cadastrePdf: null, // { name, url }
+    govServicePdf: null // { name, url }
   });
+
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGalleryDistrict, setSelectedGalleryDistrict] = useState('all');
 
-  // Rad etish modal oynasi uchun
+  // Rad etish modal
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  // Tahrirlash uchun state (Admin va Tuman uchun)
+  // Tahrirlash modal
   const [editingReportId, setEditingReportId] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -91,30 +94,62 @@ export default function App() {
     trees: '',
     cleaning: '',
     flowers: '',
-    reporter: ''
+    reporter: '',
+    photos: [],
+    cadastrePdf: null,
+    govServicePdf: null
   });
 
   useEffect(() => {
-    localStorage.setItem('eco_reports_qashqadaryo_v3', JSON.stringify(reports));
+    localStorage.setItem('eco_reports_qashqadaryo_v4', JSON.stringify(reports));
   }, [reports]);
 
-  // Fayllarni o'qish (Rasm va PDF uchun)
-  const handleFileUpload = (e, fieldName) => {
+  // Bir nechta rasmlarni yuklash
+  const handleMultipleImages = (e, isEdit = false) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    const newPhotos = [];
+    let processed = 0;
+
+    files.forEach(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`${file.name} hajmi 5MB dan katta! Yuborilmadi.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newPhotos.push(reader.result);
+        processed++;
+        if (processed === files.length) {
+          if (isEdit) {
+            setEditFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
+          } else {
+            setFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // PDF Faylni o'qish va URL yaratish
+  const handlePdfUpload = (e, fieldName, isEdit = false) => {
     const file = e.target.files[0];
     if (file) {
-      if (fieldName === 'photoBase64') {
-        if (file.size > 3 * 1024 * 1024) {
-          alert("Rasm hajmi 3MB dan kichik bo'lishi kerak!");
-          return;
-        }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFormData(prev => ({ ...prev, photoBase64: reader.result }));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const pdfData = {
+          name: file.name,
+          url: reader.result
         };
-        reader.readAsDataURL(file);
-      } else {
-        setFormData(prev => ({ ...prev, [fieldName]: file.name }));
-      }
+        if (isEdit) {
+          setEditFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+        } else {
+          setFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -126,7 +161,7 @@ export default function App() {
       setPasswordInput('');
       setAuthError('');
     } else {
-      setAuthError('Parol noto\'g\'ri! Qaytadan urinib ko\'ring.');
+      setAuthError('Parol noto\'g\'ri!');
     }
   };
 
@@ -146,11 +181,11 @@ export default function App() {
       cleaning: Number(formData.cleaningArea) || 0,
       flowers: Number(formData.flowersCount) || 0,
       reporter: formData.reporterName,
-      photo: formData.photoBase64 || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400',
-      cadastrePdf: formData.cadastrePdfName || 'Yuklanmagan',
-      govServicePdf: formData.govServicePdfName || 'Yuklanmagan',
+      photos: formData.photos.length > 0 ? formData.photos : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'],
+      cadastrePdf: formData.cadastrePdf,
+      govServicePdf: formData.govServicePdf,
       date: new Date().toLocaleDateString('uz-UZ'),
-      status: 'pending', // 'pending', 'approved', 'rejected'
+      status: 'pending',
       rejectReason: ''
     };
 
@@ -162,16 +197,15 @@ export default function App() {
       cleaningArea: '',
       flowersCount: '',
       reporterName: '',
-      photoBase64: '',
-      cadastrePdfName: '',
-      govServicePdfName: ''
+      photos: [],
+      cadastrePdf: null,
+      govServicePdf: null
     });
     setSelectedDistrict('');
     
     setTimeout(() => setSubmitSuccess(false), 4000);
   };
 
-  // Statusni o'zgartirish (Admin uchun)
   const handleApprove = (id) => {
     setReports(reports.map(r => r.id === id ? { ...r, status: 'approved', rejectReason: '' } : r));
   };
@@ -193,7 +227,7 @@ export default function App() {
     }
   };
 
-  // Tahrirlashni ochish (Tuman yoki Admin uchun)
+  // Tahrirlashni ochish
   const handleOpenEditModal = (report) => {
     setEditingReportId(report.id);
     setEditFormData({
@@ -202,12 +236,15 @@ export default function App() {
       trees: report.trees,
       cleaning: report.cleaning,
       flowers: report.flowers,
-      reporter: report.reporter
+      reporter: report.reporter,
+      photos: report.photos || [],
+      cadastrePdf: report.cadastrePdf || null,
+      govServicePdf: report.govServicePdf || null
     });
     setIsEditModalOpen(true);
   };
 
-  // Tahrirlangan hisobotni saqlash
+  // Tahrirni saqlash
   const handleSaveEdit = (e) => {
     e.preventDefault();
     setReports(reports.map(r => {
@@ -220,8 +257,11 @@ export default function App() {
           cleaning: Number(editFormData.cleaning) || 0,
           flowers: Number(editFormData.flowers) || 0,
           reporter: editFormData.reporter,
-          status: 'pending', // Qayta tahrirlanganda status 'pending' bo'ladi
-          rejectReason: ''   // Xatolik sababi tozalanadi
+          photos: editFormData.photos,
+          cadastrePdf: editFormData.cadastrePdf,
+          govServicePdf: editFormData.govServicePdf,
+          status: 'pending',
+          rejectReason: ''
         };
       }
       return r;
@@ -284,7 +324,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ASOSIY TANA */}
+      {/* MAIN CONTENT */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         
         {role === 'user' && (
@@ -303,7 +343,7 @@ export default function App() {
               {submitSuccess && (
                 <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                  <span className="text-sm font-medium">Hisobot va hujjatlar muvaffaqiyatli saqlandi va Viloyat Adminiga ko'rib chiqish uchun yuborildi!</span>
+                  <span className="text-sm font-medium">Hisobot muvaffaqiyatli saqlandi va Viloyat Adminiga ko'rib chiqish uchun yuborildi!</span>
                 </div>
               )}
 
@@ -342,7 +382,7 @@ export default function App() {
                     </label>
                     <input
                       type="text"
-                      placeholder="Masalan: 4-oilaviy poliklinika"
+                      placeholder="4-Oilaviy poliklinika"
                       value={formData.institutionName}
                       onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -393,7 +433,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* MAS'UL VA FOTO */}
+                {/* MAS'UL VA BIR NECHTA RASM YUKLASH */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Mas'ul xodim (F.I.SH)</label>
@@ -408,16 +448,20 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Foto hisobot (Rasm)</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Foto hisobotlar (Ko'p rasm tanlash mumkin)</label>
                     <div className="relative border border-slate-200 rounded-xl bg-slate-50 p-2 flex items-center gap-2">
                       <Upload className="w-4 h-4 text-slate-400 ml-2" />
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => handleFileUpload(e, 'photoBase64')}
+                        multiple
+                        onChange={(e) => handleMultipleImages(e, false)}
                         className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer"
                       />
                     </div>
+                    {formData.photos.length > 0 && (
+                      <p className="text-[11px] text-emerald-600 mt-1 font-medium">✓ {formData.photos.length} ta rasm yuklandi</p>
+                    )}
                   </div>
                 </div>
 
@@ -433,21 +477,27 @@ export default function App() {
                       <input
                         type="file"
                         accept=".pdf"
-                        onChange={(e) => handleFileUpload(e, 'cadastrePdfName')}
+                        onChange={(e) => handlePdfUpload(e, 'cadastrePdf', false)}
                         className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
                         required
                       />
+                      {formData.cadastrePdf && (
+                        <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.cadastrePdf.name}</p>
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">2. Davlat xizmatlaridan o'tganlik hujjati (PDF)</label>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">2. Davlat xizmati hujjati (PDF)</label>
                       <input
                         type="file"
                         accept=".pdf"
-                        onChange={(e) => handleFileUpload(e, 'govServicePdfName')}
+                        onChange={(e) => handlePdfUpload(e, 'govServicePdf', false)}
                         className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
                         required
                       />
+                      {formData.govServicePdf && (
+                        <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.govServicePdf.name}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -461,10 +511,10 @@ export default function App() {
               </form>
             </div>
 
-            {/* YUBORILGAN HISOBOTLAR STATUSI VA TAHRIRLASH */}
+            {/* YUBORILGAN HISOBOTLAR STATUSI */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati va tahrirlash
+                <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati
               </h3>
 
               <div className="space-y-4">
@@ -501,7 +551,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Rad etilgan bo'lsa xatolik va TAHRIRLASH tugmasi */}
+                      {/* Rad etilgan bo'lsa xatolik va TAHRIRLASH */}
                       {item.status === 'rejected' && (
                         <div className="mt-1 p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                           <div className="flex items-start gap-2 text-xs text-rose-800">
@@ -528,6 +578,7 @@ export default function App() {
           </div>
         )}
 
+        {/* ADMIN PANEL */}
         {role === 'admin' && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -605,7 +656,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* JADVAL TABI (ADMIN TEKSHIRISH) */}
+            {/* JADVAL TABI (ADMIN) */}
             {activeTab === 'reports' && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -631,7 +682,7 @@ export default function App() {
                       <tr>
                         <th className="p-4">Tuman va Muassasa</th>
                         <th className="p-4">Daraxt/Tozalash/Gul</th>
-                        <th className="p-4">PDF Hujjatlar</th>
+                        <th className="p-4">PDF Hujjatlar (Ochish / Yuklash)</th>
                         <th className="p-4">Mas'ul / Sana</th>
                         <th className="p-4">Status</th>
                         <th className="p-4 text-right">Tasdiqlash / Amallar</th>
@@ -661,14 +712,40 @@ export default function App() {
                               <div className="text-amber-700 font-medium">{item.cleaning} m² tozalash</div>
                               <div className="text-rose-700 font-medium">{item.flowers} dona gul</div>
                             </td>
-                            <td className="p-4 space-y-1">
-                              <div className="flex items-center gap-1 text-[11px] text-sky-700 bg-sky-50 px-2 py-1 rounded-md border border-sky-100">
-                                <FileText className="w-3 h-3" /> Kadastr: <span className="truncate max-w-[100px]">{item.cadastrePdf}</span>
-                              </div>
-                              <div className="flex items-center gap-1 text-[11px] text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">
-                                <FileText className="w-3 h-3" /> Davlat xizmati: <span className="truncate max-w-[100px]">{item.govServicePdf}</span>
-                              </div>
+                            
+                            {/* PDF Fayllarni ochish va yuklash tugmalari */}
+                            <td className="p-4 space-y-1.5">
+                              {item.cadastrePdf ? (
+                                <a 
+                                  href={item.cadastrePdf.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="flex items-center gap-1.5 text-[11px] text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-md border border-sky-200 transition font-medium"
+                                >
+                                  <FileText className="w-3.5 h-3.5" /> 
+                                  <span className="truncate max-w-[120px]">Kadastr: {item.cadastrePdf.name}</span>
+                                  <Eye className="w-3 h-3 ml-auto text-sky-600" />
+                                </a>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 block">Kadastr: Yuklanmagan</span>
+                              )}
+
+                              {item.govServicePdf ? (
+                                <a 
+                                  href={item.govServicePdf.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="flex items-center gap-1.5 text-[11px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 transition font-medium"
+                                >
+                                  <FileText className="w-3.5 h-3.5" /> 
+                                  <span className="truncate max-w-[120px]">Davlat xizmati: {item.govServicePdf.name}</span>
+                                  <Eye className="w-3 h-3 ml-auto text-indigo-600" />
+                                </a>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 block">Davlat xizmati: Yuklanmagan</span>
+                              )}
                             </td>
+
                             <td className="p-4">
                               <div className="font-medium text-slate-700">{item.reporter}</div>
                               <div className="text-[10px] text-slate-400">{item.date}</div>
@@ -690,14 +767,12 @@ export default function App() {
                                   <button
                                     onClick={() => handleApprove(item.id)}
                                     className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition inline-flex items-center gap-1"
-                                    title="Qabul qilish"
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5" /> Qabul
                                   </button>
                                   <button
                                     onClick={() => handleOpenRejectModal(item.id)}
                                     className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition inline-flex items-center gap-1"
-                                    title="Rad etish"
                                   >
                                     <XCircle className="w-3.5 h-3.5" /> Rad
                                   </button>
@@ -728,7 +803,7 @@ export default function App() {
               </div>
             )}
 
-            {/* FOTO GALEREYA TABI */}
+            {/* FOTO GALEREYA TABI (KO'P RASMLAR KO'RINISHI) */}
             {activeTab === 'gallery' && (
               <div className="space-y-6">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-4">
@@ -757,25 +832,26 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                     {galleryReports.map((item) => (
                       <div key={item.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition">
-                        <div className="h-48 bg-slate-100 relative overflow-hidden">
-                          <img
-                            src={item.photo}
-                            alt={item.district}
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-3 left-3 bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-amber-400" />
-                            {item.district}
-                          </div>
-                          <div className="absolute top-3 right-3 bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-medium px-2.5 py-1 rounded-lg flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-emerald-400" />
-                            {item.date}
-                          </div>
+                        
+                        {/* Bir nechta rasmlar galereyasi */}
+                        <div className="p-2 bg-slate-100 grid grid-cols-2 gap-1.5 h-48 overflow-y-auto">
+                          {Array.isArray(item.photos) && item.photos.length > 0 ? (
+                            item.photos.map((imgUrl, imgIndex) => (
+                              <img
+                                key={imgIndex}
+                                src={imgUrl}
+                                alt={`${item.district}-${imgIndex}`}
+                                className="w-full h-20 object-cover rounded-lg border border-slate-200"
+                              />
+                            ))
+                          ) : (
+                            <img src={item.photo || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'} alt="foto" className="w-full h-full object-cover col-span-2 rounded-lg" />
+                          )}
                         </div>
 
                         <div className="p-4 space-y-2">
                           <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Muassasa:</span>
+                            <span className="font-bold text-slate-800">{item.district}</span>
                             <span className="font-semibold text-sky-700">{item.institution}</span>
                           </div>
 
@@ -848,7 +924,7 @@ export default function App() {
         </div>
       )}
 
-      {/* PAROL SO'RASH MODALI */}
+      {/* PAROL MODALI */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100">
@@ -899,10 +975,10 @@ export default function App() {
         </div>
       )}
 
-      {/* TAHRIRLASH MODALI (Tuman va Admin uchun umumiy) */}
+      {/* TAHRIRLASH MODALI (RASM VA PDF LARNI O'ZGARTIRISH BILAN) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash va Qayta Yuborish
@@ -916,29 +992,31 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Tuman / Shahar</label>
-                <select
-                  value={editFormData.district}
-                  onChange={(e) => setEditFormData({...editFormData, district: e.target.value})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
-                  required
-                >
-                  {REGIONS[0].districts.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Tuman / Shahar</label>
+                  <select
+                    value={editFormData.district}
+                    onChange={(e) => setEditFormData({...editFormData, district: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
+                    required
+                  >
+                    {REGIONS[0].districts.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Muassasa nomi</label>
-                <input
-                  type="text"
-                  value={editFormData.institutionName}
-                  onChange={(e) => setEditFormData({...editFormData, institutionName: e.target.value})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
-                  required
-                />
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Muassasa nomi</label>
+                  <input
+                    type="text"
+                    value={editFormData.institutionName}
+                    onChange={(e) => setEditFormData({...editFormData, institutionName: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
+                    required
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
@@ -982,6 +1060,50 @@ export default function App() {
                 />
               </div>
 
+              {/* TAHRIRLASHDA RASMLARNI O'ZGARTIRISH */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Yangi foto hisobotlar yuklash (ixtiyoriy)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => handleMultipleImages(e, true)}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Hozirgi rasmlar soni: {editFormData.photos.length} ta</p>
+              </div>
+
+              {/* TAHRIRLASHDA PDF FAYLLARNI O'ZGARTIRISH */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-700 block">PDF Hujjatlarni yangilash:</span>
+
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">1. Kadastr PDF</label>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => handlePdfUpload(e, 'cadastrePdf', true)}
+                    className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
+                  />
+                  {editFormData.cadastrePdf && (
+                    <span className="text-[10px] text-emerald-600 block mt-0.5">Mavjud: {editFormData.cadastrePdf.name}</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-0.5">2. Davlat xizmati PDF</label>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => handlePdfUpload(e, 'govServicePdf', true)}
+                    className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
+                  />
+                  {editFormData.govServicePdf && (
+                    <span className="text-[10px] text-emerald-600 block mt-0.5">Mavjud: {editFormData.govServicePdf.name}</span>
+                  )}
+                </div>
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -994,7 +1116,7 @@ export default function App() {
                   type="submit"
                   className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow flex items-center justify-center gap-1.5"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Saqlash va Qayta yuborish
+                  <RefreshCw className="w-3.5 h-3.5" /> Saqlash va Yuborish
                 </button>
               </div>
             </form>

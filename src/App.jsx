@@ -22,7 +22,8 @@ import {
   Building2,
   XCircle,
   Clock,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 const REGIONS = [
@@ -34,9 +35,9 @@ const REGIONS = [
       'Shahrisabz sh.', 
       'Dehqonobod t.', 
       'G‘uzor t.', 
-      'Keles t.', 
-      'Kamashi t.', 
-      'Karshi t.', 
+      'Ko‘kdala t.', 
+      'Qamashi t.', 
+      'Qarshi t.', 
       'Koson t.', 
       'Kasbi t.', 
       'Kitob t.', 
@@ -58,7 +59,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [reports, setReports] = useState(() => {
-    const saved = localStorage.getItem('eco_reports_qashqadaryo_v2');
+    const saved = localStorage.getItem('eco_reports_qashqadaryo_v3');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -81,7 +82,7 @@ export default function App() {
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  // Tahrirlash uchun state
+  // Tahrirlash uchun state (Admin va Tuman uchun)
   const [editingReportId, setEditingReportId] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -94,7 +95,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('eco_reports_qashqadaryo_v2', JSON.stringify(reports));
+    localStorage.setItem('eco_reports_qashqadaryo_v3', JSON.stringify(reports));
   }, [reports]);
 
   // Fayllarni o'qish (Rasm va PDF uchun)
@@ -112,7 +113,6 @@ export default function App() {
         };
         reader.readAsDataURL(file);
       } else {
-        // PDF fayl nomini saqlash
         setFormData(prev => ({ ...prev, [fieldName]: file.name }));
       }
     }
@@ -193,6 +193,7 @@ export default function App() {
     }
   };
 
+  // Tahrirlashni ochish (Tuman yoki Admin uchun)
   const handleOpenEditModal = (report) => {
     setEditingReportId(report.id);
     setEditFormData({
@@ -206,6 +207,7 @@ export default function App() {
     setIsEditModalOpen(true);
   };
 
+  // Tahrirlangan hisobotni saqlash
   const handleSaveEdit = (e) => {
     e.preventDefault();
     setReports(reports.map(r => {
@@ -217,7 +219,9 @@ export default function App() {
           trees: Number(editFormData.trees) || 0,
           cleaning: Number(editFormData.cleaning) || 0,
           flowers: Number(editFormData.flowers) || 0,
-          reporter: editFormData.reporter
+          reporter: editFormData.reporter,
+          status: 'pending', // Qayta tahrirlanganda status 'pending' bo'ladi
+          rejectReason: ''   // Xatolik sababi tozalanadi
         };
       }
       return r;
@@ -338,7 +342,7 @@ export default function App() {
                     </label>
                     <input
                       type="text"
-                      placeholder="Masalan: 4-oilaviy poliklinika"
+                      placeholder="Masalan: 12-maktab, Tumangaz"
                       value={formData.institutionName}
                       onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -457,51 +461,64 @@ export default function App() {
               </form>
             </div>
 
-            {/* YUBORILGAN HISOBOTLAR STATUSI (Tuman vakili ko'rishi uchun) */}
+            {/* YUBORILGAN HISOBOTLAR STATUSI VA TAHRIRLASH */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati (Status)
+                <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati va tahrirlash
               </h3>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {reports.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-4">Hozircha hech qanday hisobot yuborilmagan.</p>
                 ) : (
                   reports.map((item) => (
-                    <div key={item.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-800 text-sm">{item.district}</span>
-                          <span className="text-xs text-slate-500">({item.institution})</span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5">Sana: {item.date} | Mas'ul: {item.reporter}</p>
-
-                        {/* Rad etilgan bo'lsa xatolik matni */}
-                        {item.status === 'rejected' && (
-                          <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-1.5">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
-                            <span><strong>Xatolik sababi:</strong> Admin tomonidan qabul qilinmadi. {item.rejectReason}</span>
+                    <div key={item.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 flex flex-col justify-between gap-3">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 text-sm">{item.district}</span>
+                            <span className="text-xs text-slate-500">({item.institution})</span>
                           </div>
-                        )}
+                          <p className="text-xs text-slate-500 mt-0.5">Sana: {item.date} | Mas'ul: {item.reporter}</p>
+                        </div>
+
+                        <div>
+                          {item.status === 'pending' && (
+                            <span className="bg-amber-100 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" /> Tekshirilmoqda
+                            </span>
+                          )}
+                          {item.status === 'approved' && (
+                            <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Tasdiqlandi
+                            </span>
+                          )}
+                          {item.status === 'rejected' && (
+                            <span className="bg-rose-100 text-rose-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
+                              <XCircle className="w-3.5 h-3.5 text-rose-600" /> Qaytarib yuborildi
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div>
-                        {item.status === 'pending' && (
-                          <span className="bg-amber-100 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" /> Tekshirilmoqda
-                          </span>
-                        )}
-                        {item.status === 'approved' && (
-                          <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Tasdiqlandi (Qabul qilindi)
-                          </span>
-                        )}
-                        {item.status === 'rejected' && (
-                          <span className="bg-rose-100 text-rose-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                            <XCircle className="w-3.5 h-3.5 text-rose-600" /> Qaytarib yuborildi
-                          </span>
-                        )}
-                      </div>
+                      {/* Rad etilgan bo'lsa xatolik va TAHRIRLASH tugmasi */}
+                      {item.status === 'rejected' && (
+                        <div className="mt-1 p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                          <div className="flex items-start gap-2 text-xs text-rose-800">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600 mt-0.5" />
+                            <div>
+                              <span className="font-bold">Xatolik sababi:</span> {item.rejectReason}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleOpenEditModal(item)}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 flex-shrink-0 shadow"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" /> Qayta tahrirlash va yuborish
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -882,13 +899,13 @@ export default function App() {
         </div>
       )}
 
-      {/* TAHRIRLASH MODALI */}
+      {/* TAHRIRLASH MODALI (Tuman va Admin uchun umumiy) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash
+                <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash va Qayta Yuborish
               </h3>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
@@ -975,9 +992,9 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl transition shadow"
+                  className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow flex items-center justify-center gap-1.5"
                 >
-                  Saqlash
+                  <RefreshCw className="w-3.5 h-3.5" /> Saqlash va Qayta yuborish
                 </button>
               </div>
             </form>

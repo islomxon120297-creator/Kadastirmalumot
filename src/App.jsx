@@ -338,7 +338,7 @@ export default function App() {
                     </label>
                     <input
                       type="text"
-                      placeholder="Masalan: 12-maktab, Tumangaz"
+                      placeholder="Masalan: 4-oilaviy poliklinika"
                       value={formData.institutionName}
                       onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"

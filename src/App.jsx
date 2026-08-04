@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Trees, 
-  Sparkles, 
-  Flower2, 
-  ShieldCheck, 
-  Lock, 
-  LogOut, 
-  CheckCircle2, 
-  BarChart3, 
-  MapPin, 
-  PlusCircle, 
+import {
+  Trees,
+  Sparkles,
+  Flower2,
+  ShieldCheck,
+  Lock,
+  LogOut,
+  CheckCircle2,
+  BarChart3,
+  MapPin,
+  PlusCircle,
   Search,
   Users,
   Trash2,
   Edit3,
   X,
   Image as ImageIcon,
-  Calendar,
   Upload,
   FileText,
   Building2,
@@ -25,53 +24,63 @@ import {
   AlertCircle,
   RefreshCw,
   Eye,
-  Maximize2
+  Maximize2,
+  Loader2
 } from 'lucide-react';
 
+import { db, storage } from './firebase';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+
 const REGIONS = [
-  { 
-    id: 'qashqadaryo', 
-    name: 'Qashqadaryo viloyati', 
+  {
+    id: 'qashqadaryo',
+    name: 'Qashqadaryo viloyati',
     districts: [
-      'Qarshi sh.', 
-      'Shahrisabz sh.', 
-      'Dehqonobod t.', 
-      'G‘uzor t.', 
-      'Keles t.', 
-      'Kamashi t.', 
-      'Karshi t.', 
-      'Koson t.', 
-      'Kasbi t.', 
-      'Kitob t.', 
-      'Mirishkor t.', 
-      'Muborak t.', 
-      'Nishon t.', 
-      'Shahrisabz t.', 
-      'Chiroqchi t.', 
+      'Qarshi sh.',
+      'Shahrisabz sh.',
+      'Dehqonobod t.',
+      'G‘uzor t.',
+      'Ko‘kdala t.',
+      'Kamashi t.',
+      'Karshi t.',
+      'Koson t.',
+      'Kasbi t.',
+      'Kitob t.',
+      'Mirishkor t.',
+      'Muborak t.',
+      'Nishon t.',
+      'Shahrisabz t.',
+      'Chiroqchi t.',
       'Yakkabog‘ t.'
-    ] 
+    ]
   }
 ];
 
+const REPORTS_COLLECTION = 'reports';
+
 export default function App() {
-  const [role, setRole] = useState('user'); 
+  const [role, setRole] = useState('user');
   const [activeTab, setActiveTab] = useState('reports');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // Katta ko'rinadigan rasm state'i
   const [previewImage, setPreviewImage] = useState(null);
 
-  const [reports, setReports] = useState(() => {
-    try {
-      const saved = localStorage.getItem('eco_reports_qashqadaryo_v4');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("LocalStorage o'qishda xatolik:", e);
-      return [];
-    }
-  });
+  // Firestore'dan real-vaqtda keladigan hisobotlar
+  const [reports, setReports] = useState([]);
+  const [loadingReports, setLoadingReports] = useState(true);
 
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [formData, setFormData] = useState({
@@ -80,20 +89,20 @@ export default function App() {
     cleaningArea: '',
     flowersCount: '',
     reporterName: '',
-    photos: [], 
-    cadastrePdf: null, 
-    govServicePdf: null 
+    photos: [], // {url, path}
+    cadastrePdf: null, // {name, url, path}
+    govServicePdf: null
   });
 
+  const [uploadingKey, setUploadingKey] = useState(null); // qaysi input hozir yuklanmoqda
+  const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGalleryDistrict, setSelectedGalleryDistrict] = useState('all');
 
-  // Rad etish modal
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  // Tahrirlash modal
   const [editingReportId, setEditingReportId] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -108,58 +117,96 @@ export default function App() {
     govServicePdf: null
   });
 
-  // LocalStorage to'lib ketishi va App qulashini oldini olish
+  // ---- Firestore'ni tinglash (barcha qurilmalarda bir xil ma'lumot) ----
   useEffect(() => {
-    try {
-      localStorage.setItem('eco_reports_qashqadaryo_v4', JSON.stringify(reports));
-    } catch (e) {
-      console.error("QuotaExceededError tutildi! LocalStorage to'lib ketgan.", e);
-      alert("Brauzerning xotirasi (LocalStorage) to'lib ketdi! Ba'zi fayllar saqlanmasligi mumkin.");
-    }
-  }, [reports]);
+    const q = query(collection(db, REPORTS_COLLECTION), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setReports(data);
+        setLoadingReports(false);
+      },
+      (error) => {
+        console.error('Firestore o\'qishda xatolik:', error);
+        setLoadingReports(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
-  // Bir nechta rasmlarni yuklash
-  const handleMultipleImages = (e, isEdit = false) => {
+  // ---- Storage'ga fayl yuklash yordamchisi ----
+  const uploadFile = async (file, folder) => {
+    const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const path = `${folder}/${safeName}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    return { url, path };
+  };
+
+  const deleteFileByPath = async (path) => {
+    if (!path) return;
+    try {
+      await deleteObject(ref(storage, path));
+    } catch (e) {
+      console.warn('Faylni o\'chirishda xatolik (e\'tiborsiz qoldirildi):', e);
+    }
+  };
+
+  // ---- Bir nechta rasmlarni yuklash (Storage'ga) ----
+  const handleMultipleImages = async (e, isEdit = false) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
 
-    const newPhotos = [];
-    let processed = 0;
+    const tooLarge = files.filter((f) => f.size > 5 * 1024 * 1024);
+    if (tooLarge.length) {
+      alert(`Quyidagi fayllar 5MB dan katta: ${tooLarge.map((f) => f.name).join(', ')}`);
+    }
+    const validFiles = files.filter((f) => f.size <= 5 * 1024 * 1024);
+    if (!validFiles.length) return;
 
-    files.forEach(file => {
-      if (file.size > 1 * 1024 * 1024) {
-        alert(`${file.name} hajmi juda katta (1MB dan kichik rasm yuklang)!`);
-        return;
+    setUploadingKey(isEdit ? 'edit-photos' : 'photos');
+    try {
+      const uploaded = await Promise.all(validFiles.map((f) => uploadFile(f, 'photos')));
+      if (isEdit) {
+        setEditFormData((prev) => ({ ...prev, photos: [...prev.photos, ...uploaded] }));
+      } else {
+        setFormData((prev) => ({ ...prev, photos: [...prev.photos, ...uploaded] }));
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        newPhotos.push(reader.result);
-        processed++;
-        if (processed === files.length) {
-          if (isEdit) {
-            setEditFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
-          } else {
-            setFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    } catch (err) {
+      console.error('Rasm yuklashda xatolik:', err);
+      alert('Rasm yuklashda xatolik yuz berdi. Qayta urinib ko\'ring.');
+    } finally {
+      setUploadingKey(null);
+      e.target.value = '';
+    }
   };
 
-  // PDF Faylni URL.createObjectURL orqali o'qish
-  const handlePdfUpload = (e, fieldName, isEdit = false) => {
+  // ---- PDF faylni Storage'ga yuklash ----
+  const handlePdfUpload = async (e, fieldName, isEdit = false) => {
     const file = e.target.files[0];
-    if (file) {
-      const pdfData = {
-        name: file.name,
-        url: URL.createObjectURL(file) 
-      };
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('PDF hajmi 10MB dan kichik bo\'lishi kerak.');
+      return;
+    }
+
+    setUploadingKey(isEdit ? `edit-${fieldName}` : fieldName);
+    try {
+      const { url, path } = await uploadFile(file, 'documents');
+      const pdfData = { name: file.name, url, path };
       if (isEdit) {
-        setEditFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+        setEditFormData((prev) => ({ ...prev, [fieldName]: pdfData }));
       } else {
-        setFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+        setFormData((prev) => ({ ...prev, [fieldName]: pdfData }));
       }
+    } catch (err) {
+      console.error('PDF yuklashda xatolik:', err);
+      alert('PDF yuklashda xatolik yuz berdi. Qayta urinib ko\'ring.');
+    } finally {
+      setUploadingKey(null);
+      e.target.value = '';
     }
   };
 
@@ -175,49 +222,69 @@ export default function App() {
     }
   };
 
-  const handleSubmitReport = (e) => {
+  // ---- Yangi hisobotni Firestore'ga yozish ----
+  const handleSubmitReport = async (e) => {
     e.preventDefault();
     if (!selectedDistrict) {
       alert('Iltimos, tumanni tanlang!');
       return;
     }
+    if (!formData.cadastrePdf || !formData.govServicePdf) {
+      alert('Iltimos, ikkala PDF hujjatni ham yuklang!');
+      return;
+    }
 
-    const newReport = {
-      id: Date.now(),
-      region: 'Qashqadaryo viloyati',
-      district: selectedDistrict,
-      institution: formData.institutionName || 'Ko\'rsatilmadi',
-      trees: Number(formData.treesCount) || 0,
-      cleaning: Number(formData.cleaningArea) || 0,
-      flowers: Number(formData.flowersCount) || 0,
-      reporter: formData.reporterName,
-      photos: formData.photos.length > 0 ? formData.photos : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'],
-      cadastrePdf: formData.cadastrePdf,
-      govServicePdf: formData.govServicePdf,
-      date: new Date().toLocaleDateString('uz-UZ'),
-      status: 'pending',
-      rejectReason: ''
-    };
+    setSubmitting(true);
+    try {
+      const newReport = {
+        region: 'Qashqadaryo viloyati',
+        district: selectedDistrict,
+        institution: formData.institutionName || 'Ko\'rsatilmadi',
+        trees: Number(formData.treesCount) || 0,
+        cleaning: Number(formData.cleaningArea) || 0,
+        flowers: Number(formData.flowersCount) || 0,
+        reporter: formData.reporterName,
+        photos: formData.photos.length > 0
+          ? formData.photos
+          : [{ url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400', path: null }],
+        cadastrePdf: formData.cadastrePdf,
+        govServicePdf: formData.govServicePdf,
+        date: new Date().toLocaleDateString('uz-UZ'),
+        status: 'pending',
+        rejectReason: '',
+        createdAt: serverTimestamp()
+      };
 
-    setReports([newReport, ...reports]);
-    setSubmitSuccess(true);
-    setFormData({
-      institutionName: '',
-      treesCount: '',
-      cleaningArea: '',
-      flowersCount: '',
-      reporterName: '',
-      photos: [],
-      cadastrePdf: null,
-      govServicePdf: null
-    });
-    setSelectedDistrict('');
-    
-    setTimeout(() => setSubmitSuccess(false), 4000);
+      await addDoc(collection(db, REPORTS_COLLECTION), newReport);
+
+      setSubmitSuccess(true);
+      setFormData({
+        institutionName: '',
+        treesCount: '',
+        cleaningArea: '',
+        flowersCount: '',
+        reporterName: '',
+        photos: [],
+        cadastrePdf: null,
+        govServicePdf: null
+      });
+      setSelectedDistrict('');
+      setTimeout(() => setSubmitSuccess(false), 4000);
+    } catch (err) {
+      console.error('Hisobotni saqlashda xatolik:', err);
+      alert('Hisobotni saqlashda xatolik yuz berdi. Internet aloqasini tekshirib qayta urinib ko\'ring.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleApprove = (id) => {
-    setReports(reports.map(r => r.id === id ? { ...r, status: 'approved', rejectReason: '' } : r));
+  const handleApprove = async (id) => {
+    try {
+      await updateDoc(doc(db, REPORTS_COLLECTION, id), { status: 'approved', rejectReason: '' });
+    } catch (err) {
+      console.error(err);
+      alert('Amalni bajarishda xatolik yuz berdi.');
+    }
   };
 
   const handleOpenRejectModal = (id) => {
@@ -225,15 +292,34 @@ export default function App() {
     setRejectReason('');
   };
 
-  const handleConfirmReject = (e) => {
+  const handleConfirmReject = async (e) => {
     e.preventDefault();
-    setReports(reports.map(r => r.id === rejectingId ? { ...r, status: 'rejected', rejectReason: rejectReason || 'Ma\'lumotlar xato kiritilgan.' } : r));
-    setRejectingId(null);
+    try {
+      await updateDoc(doc(db, REPORTS_COLLECTION, rejectingId), {
+        status: 'rejected',
+        rejectReason: rejectReason || 'Ma\'lumotlar xato kiritilgan.'
+      });
+      setRejectingId(null);
+    } catch (err) {
+      console.error(err);
+      alert('Amalni bajarishda xatolik yuz berdi.');
+    }
   };
 
-  const handleDeleteReport = (id) => {
-    if (window.confirm('Rostdan ham ushbu hisobotni o\'chirmoqchimisiz?')) {
-      setReports(reports.filter(r => r.id !== id));
+  const handleDeleteReport = async (id) => {
+    if (!window.confirm('Rostdan ham ushbu hisobotni o\'chirmoqchimisiz?')) return;
+    try {
+      const target = reports.find((r) => r.id === id);
+      await deleteDoc(doc(db, REPORTS_COLLECTION, id));
+      // Storage'dagi fayllarni ham tozalash (ixtiyoriy, xato bo'lsa e'tiborsiz qoldiriladi)
+      if (target) {
+        (target.photos || []).forEach((p) => deleteFileByPath(p.path));
+        deleteFileByPath(target.cadastrePdf?.path);
+        deleteFileByPath(target.govServicePdf?.path);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('O\'chirishda xatolik yuz berdi.');
     }
   };
 
@@ -253,45 +339,45 @@ export default function App() {
     setIsEditModalOpen(true);
   };
 
-  const handleSaveEdit = (e) => {
+  const handleSaveEdit = async (e) => {
     e.preventDefault();
-    setReports(reports.map(r => {
-      if (r.id === editingReportId) {
-        return {
-          ...r,
-          district: editFormData.district,
-          institution: editFormData.institutionName,
-          trees: Number(editFormData.trees) || 0,
-          cleaning: Number(editFormData.cleaning) || 0,
-          flowers: Number(editFormData.flowers) || 0,
-          reporter: editFormData.reporter,
-          photos: editFormData.photos,
-          cadastrePdf: editFormData.cadastrePdf,
-          govServicePdf: editFormData.govServicePdf,
-          status: 'pending',
-          rejectReason: ''
-        };
-      }
-      return r;
-    }));
-    setIsEditModalOpen(false);
-    setEditingReportId(null);
+    try {
+      await updateDoc(doc(db, REPORTS_COLLECTION, editingReportId), {
+        district: editFormData.district,
+        institution: editFormData.institutionName,
+        trees: Number(editFormData.trees) || 0,
+        cleaning: Number(editFormData.cleaning) || 0,
+        flowers: Number(editFormData.flowers) || 0,
+        reporter: editFormData.reporter,
+        photos: editFormData.photos,
+        cadastrePdf: editFormData.cadastrePdf,
+        govServicePdf: editFormData.govServicePdf,
+        status: 'pending',
+        rejectReason: ''
+      });
+      setIsEditModalOpen(false);
+      setEditingReportId(null);
+    } catch (err) {
+      console.error(err);
+      alert('Saqlashda xatolik yuz berdi.');
+    }
   };
 
-  const filteredReports = reports.filter(r => 
-    r.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.institution.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.reporter.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredReports = reports.filter(
+    (r) =>
+      r.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.institution.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.reporter || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const galleryReports = reports.filter(r => {
+  const galleryReports = reports.filter((r) => {
     if (selectedGalleryDistrict === 'all') return true;
     return r.district === selectedGalleryDistrict;
   });
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
-      
+
       {/* HEADER */}
       <header className="bg-emerald-700 text-white shadow-lg sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -332,12 +418,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        
+
         {role === 'user' && (
           <div className="max-w-3xl mx-auto space-y-8">
-            
+
             {/* HISOBOT YUBORISH FORMASI */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
               <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
@@ -356,8 +441,7 @@ export default function App() {
               )}
 
               <form onSubmit={handleSubmitReport} className="space-y-4">
-                
-                {/* HUDUD VA MUASSASA */}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Viloyat</label>
@@ -378,7 +462,7 @@ export default function App() {
                       required
                     >
                       <option value="">-- Tanlang --</option>
-                      {REGIONS[0].districts.map(d => (
+                      {REGIONS[0].districts.map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
@@ -392,14 +476,13 @@ export default function App() {
                       type="text"
                       placeholder="Masalan: 12-maktab, Tumangaz"
                       value={formData.institutionName}
-                      onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, institutionName: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                       required
                     />
                   </div>
                 </div>
 
-                {/* KO'RSATKICHLAR */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
@@ -409,7 +492,7 @@ export default function App() {
                       type="number"
                       placeholder="0"
                       value={formData.treesCount}
-                      onChange={(e) => setFormData({...formData, treesCount: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, treesCount: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
@@ -422,7 +505,7 @@ export default function App() {
                       type="number"
                       placeholder="0"
                       value={formData.cleaningArea}
-                      onChange={(e) => setFormData({...formData, cleaningArea: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, cleaningArea: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
@@ -435,13 +518,12 @@ export default function App() {
                       type="number"
                       placeholder="0"
                       value={formData.flowersCount}
-                      onChange={(e) => setFormData({...formData, flowersCount: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, flowersCount: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
                 </div>
 
-                {/* MAS'UL VA BIR NECHTA RASM YUKLASH */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Mas'ul xodim (F.I.SH)</label>
@@ -449,7 +531,7 @@ export default function App() {
                       type="text"
                       placeholder="Masalan: A. Karimov"
                       value={formData.reporterName}
-                      onChange={(e) => setFormData({...formData, reporterName: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, reporterName: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                       required
                     />
@@ -458,11 +540,16 @@ export default function App() {
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Foto hisobotlar (Ko'p rasm tanlash mumkin)</label>
                     <div className="relative border border-slate-200 rounded-xl bg-slate-50 p-2 flex items-center gap-2">
-                      <Upload className="w-4 h-4 text-slate-400 ml-2" />
+                      {uploadingKey === 'photos' ? (
+                        <Loader2 className="w-4 h-4 text-emerald-500 ml-2 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-slate-400 ml-2" />
+                      )}
                       <input
                         type="file"
                         accept="image/*"
                         multiple
+                        disabled={uploadingKey === 'photos'}
                         onChange={(e) => handleMultipleImages(e, false)}
                         className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer"
                       />
@@ -473,7 +560,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* PDF FAYLLAR BO'LIMI */}
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 pt-3">
                   <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <FileText className="w-4 h-4 text-emerald-600" /> Rasmiy PDF Hujjatlarni Yuklash
@@ -482,13 +568,16 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">1. Kadastr ma'lumotlari (PDF)</label>
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => handlePdfUpload(e, 'cadastrePdf', false)}
-                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                        required
-                      />
+                      <div className="flex items-center gap-2">
+                        {uploadingKey === 'cadastrePdf' && <Loader2 className="w-3.5 h-3.5 text-sky-500 animate-spin" />}
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          disabled={uploadingKey === 'cadastrePdf'}
+                          onChange={(e) => handlePdfUpload(e, 'cadastrePdf', false)}
+                          className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
+                        />
+                      </div>
                       {formData.cadastrePdf && (
                         <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.cadastrePdf.name}</p>
                       )}
@@ -496,13 +585,16 @@ export default function App() {
 
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">2. Davlat xizmati hujjati (PDF)</label>
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => handlePdfUpload(e, 'govServicePdf', false)}
-                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                        required
-                      />
+                      <div className="flex items-center gap-2">
+                        {uploadingKey === 'govServicePdf' && <Loader2 className="w-3.5 h-3.5 text-sky-500 animate-spin" />}
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          disabled={uploadingKey === 'govServicePdf'}
+                          onChange={(e) => handlePdfUpload(e, 'govServicePdf', false)}
+                          className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
+                        />
+                      </div>
                       {formData.govServicePdf && (
                         <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.govServicePdf.name}</p>
                       )}
@@ -512,21 +604,27 @@ export default function App() {
 
                 <button
                   type="submit"
-                  className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-xl shadow-md transition duration-200"
+                  disabled={submitting || uploadingKey !== null}
+                  className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl shadow-md transition duration-200 flex items-center justify-center gap-2"
                 >
-                  Hisobotni Yuborish
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {submitting ? 'Yuborilmoqda...' : 'Hisobotni Yuborish'}
                 </button>
               </form>
             </div>
 
-            {/* YUBORILGAN HISOBOTLAR STATUSI (RASMLARNI BOSIB KATTALASHTIRISH BO'LIMI) */}
+            {/* YUBORILGAN HISOBOTLAR STATUSI */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
               <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati
               </h3>
 
               <div className="space-y-4">
-                {reports.length === 0 ? (
+                {loadingReports ? (
+                  <p className="text-xs text-slate-400 text-center py-4 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Yuklanmoqda...
+                  </p>
+                ) : reports.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-4">Hozircha hech qanday hisobot yuborilmagan.</p>
                 ) : (
                   reports.map((item) => (
@@ -559,18 +657,17 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Yuklangan rasmlar miniatyurasi */}
                       {Array.isArray(item.photos) && item.photos.length > 0 && (
                         <div className="flex flex-wrap gap-2 pt-1">
                           {item.photos.map((photo, pIdx) => (
-                            <div 
-                              key={pIdx} 
-                              onClick={() => setPreviewImage(photo)}
+                            <div
+                              key={pIdx}
+                              onClick={() => setPreviewImage(photo.url)}
                               className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-200"
                             >
-                              <img 
-                                src={photo} 
-                                alt="preview" 
+                              <img
+                                src={photo.url}
+                                alt="preview"
                                 className="w-14 h-14 object-cover transition transform group-hover:scale-105"
                               />
                               <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
@@ -581,7 +678,6 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Rad etilgan bo'lsa xatolik va TAHRIRLASH */}
                       {item.status === 'rejected' && (
                         <div className="mt-1 p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                           <div className="flex items-start gap-2 text-xs text-rose-800">
@@ -686,7 +782,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* JADVAL TABI (ADMIN) */}
             {activeTab === 'reports' && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -719,7 +814,11 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredReports.length === 0 ? (
+                      {loadingReports ? (
+                        <tr>
+                          <td colSpan="6" className="p-8 text-center text-slate-400">Yuklanmoqda...</td>
+                        </tr>
+                      ) : filteredReports.length === 0 ? (
                         <tr>
                           <td colSpan="6" className="p-8 text-center text-slate-400">
                             Hozircha hech qanday hisobot kelib tushmagan.
@@ -742,17 +841,16 @@ export default function App() {
                               <div className="text-amber-700 font-medium">{item.cleaning} m² tozalash</div>
                               <div className="text-rose-700 font-medium">{item.flowers} dona gul</div>
                             </td>
-                            
-                            {/* PDF Fayllar */}
+
                             <td className="p-4 space-y-1.5">
                               {item.cadastrePdf ? (
-                                <a 
-                                  href={item.cadastrePdf.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
+                                <a
+                                  href={item.cadastrePdf.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="flex items-center gap-1.5 text-[11px] text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-md border border-sky-200 transition font-medium"
                                 >
-                                  <FileText className="w-3.5 h-3.5" /> 
+                                  <FileText className="w-3.5 h-3.5" />
                                   <span className="truncate max-w-[120px]">Kadastr: {item.cadastrePdf.name}</span>
                                   <Eye className="w-3 h-3 ml-auto text-sky-600" />
                                 </a>
@@ -761,13 +859,13 @@ export default function App() {
                               )}
 
                               {item.govServicePdf ? (
-                                <a 
-                                  href={item.govServicePdf.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
+                                <a
+                                  href={item.govServicePdf.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="flex items-center gap-1.5 text-[11px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 transition font-medium"
                                 >
-                                  <FileText className="w-3.5 h-3.5" /> 
+                                  <FileText className="w-3.5 h-3.5" />
                                   <span className="truncate max-w-[120px]">Davlat xizmati: {item.govServicePdf.name}</span>
                                   <Eye className="w-3 h-3 ml-auto text-indigo-600" />
                                 </a>
@@ -833,7 +931,6 @@ export default function App() {
               </div>
             )}
 
-            {/* FOTO GALEREYA TABI (BOSGANDA KATTALASHADIGAN RASMLAR) */}
             {activeTab === 'gallery' && (
               <div className="space-y-6">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-4">
@@ -848,7 +945,7 @@ export default function App() {
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="all">Barcha Tuman va Shaharlar</option>
-                    {REGIONS[0].districts.map(d => (
+                    {REGIONS[0].districts.map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -862,18 +959,17 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                     {galleryReports.map((item) => (
                       <div key={item.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition">
-                        
-                        {/* Bir nechta rasmlar galereyasi */}
+
                         <div className="p-2 bg-slate-100 grid grid-cols-2 gap-1.5 h-48 overflow-y-auto">
                           {Array.isArray(item.photos) && item.photos.length > 0 ? (
-                            item.photos.map((imgUrl, imgIndex) => (
-                              <div 
-                                key={imgIndex} 
-                                onClick={() => setPreviewImage(imgUrl)}
+                            item.photos.map((photo, imgIndex) => (
+                              <div
+                                key={imgIndex}
+                                onClick={() => setPreviewImage(photo.url)}
                                 className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-200 h-20"
                               >
                                 <img
-                                  src={imgUrl}
+                                  src={photo.url}
                                   alt={`${item.district}-${imgIndex}`}
                                   className="w-full h-full object-cover transition transform group-hover:scale-110"
                                 />
@@ -883,14 +979,8 @@ export default function App() {
                               </div>
                             ))
                           ) : (
-                            <div 
-                              onClick={() => setPreviewImage(item.photo || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400')}
-                              className="col-span-2 relative group cursor-pointer overflow-hidden rounded-lg h-full"
-                            >
-                              <img src={item.photo || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'} alt="foto" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                                <Maximize2 className="w-5 h-5 text-white" />
-                              </div>
+                            <div className="col-span-2 relative group cursor-pointer overflow-hidden rounded-lg h-full">
+                              <img src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400" alt="foto" className="w-full h-full object-cover" />
                             </div>
                           )}
                         </div>
@@ -929,9 +1019,9 @@ export default function App() {
 
       </main>
 
-      {/* RASMNI KATTA QILIB KO'RSATISH MODALI (LIGHTBOX) */}
+      {/* RASMNI KATTA QILIB KO'RSATISH MODALI */}
       {previewImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4"
           onClick={() => setPreviewImage(null)}
         >
@@ -946,7 +1036,7 @@ export default function App() {
               src={previewImage}
               alt="Kattalashtirilgan rasm"
               className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/20"
-              onClick={(e) => e.stopPropagation()} // Rasmning o'ziga bosilganda modal yopilib ketmasligi uchun
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
         </div>
@@ -1052,7 +1142,7 @@ export default function App() {
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash va Qayta Yuborish
               </h3>
-              <button 
+              <button
                 onClick={() => setIsEditModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition"
               >
@@ -1066,11 +1156,11 @@ export default function App() {
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Tuman / Shahar</label>
                   <select
                     value={editFormData.district}
-                    onChange={(e) => setEditFormData({...editFormData, district: e.target.value})}
+                    onChange={(e) => setEditFormData({ ...editFormData, district: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                     required
                   >
-                    {REGIONS[0].districts.map(d => (
+                    {REGIONS[0].districts.map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -1081,7 +1171,7 @@ export default function App() {
                   <input
                     type="text"
                     value={editFormData.institutionName}
-                    onChange={(e) => setEditFormData({...editFormData, institutionName: e.target.value})}
+                    onChange={(e) => setEditFormData({ ...editFormData, institutionName: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                     required
                   />
@@ -1094,7 +1184,7 @@ export default function App() {
                   <input
                     type="number"
                     value={editFormData.trees}
-                    onChange={(e) => setEditFormData({...editFormData, trees: e.target.value})}
+                    onChange={(e) => setEditFormData({ ...editFormData, trees: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
@@ -1103,7 +1193,7 @@ export default function App() {
                   <input
                     type="number"
                     value={editFormData.cleaning}
-                    onChange={(e) => setEditFormData({...editFormData, cleaning: e.target.value})}
+                    onChange={(e) => setEditFormData({ ...editFormData, cleaning: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
@@ -1112,7 +1202,7 @@ export default function App() {
                   <input
                     type="number"
                     value={editFormData.flowers}
-                    onChange={(e) => setEditFormData({...editFormData, flowers: e.target.value})}
+                    onChange={(e) => setEditFormData({ ...editFormData, flowers: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
@@ -1123,26 +1213,28 @@ export default function App() {
                 <input
                   type="text"
                   value={editFormData.reporter}
-                  onChange={(e) => setEditFormData({...editFormData, reporter: e.target.value})}
+                  onChange={(e) => setEditFormData({ ...editFormData, reporter: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
                   required
                 />
               </div>
 
-              {/* TAHRIRLASHDA RASMLARNI O'ZGARTIRISH */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Yangi foto hisobotlar yuklash (ixtiyoriy)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => handleMultipleImages(e, true)}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  {uploadingKey === 'edit-photos' && <Loader2 className="w-3.5 h-3.5 text-sky-500 animate-spin" />}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={uploadingKey === 'edit-photos'}
+                    onChange={(e) => handleMultipleImages(e, true)}
+                    className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
+                  />
+                </div>
                 <p className="text-[10px] text-slate-400 mt-1">Hozirgi rasmlar soni: {editFormData.photos.length} ta</p>
               </div>
 
-              {/* TAHRIRLASHDA PDF FAYLLARNI O'ZGARTIRISH */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <span className="text-xs font-bold text-slate-700 block">PDF Hujjatlarni yangilash:</span>
 
@@ -1151,6 +1243,7 @@ export default function App() {
                   <input
                     type="file"
                     accept=".pdf"
+                    disabled={uploadingKey === 'edit-cadastrePdf'}
                     onChange={(e) => handlePdfUpload(e, 'cadastrePdf', true)}
                     className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
                   />
@@ -1164,6 +1257,7 @@ export default function App() {
                   <input
                     type="file"
                     accept=".pdf"
+                    disabled={uploadingKey === 'edit-govServicePdf'}
                     onChange={(e) => handlePdfUpload(e, 'govServicePdf', true)}
                     className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
                   />

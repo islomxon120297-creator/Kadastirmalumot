@@ -61,8 +61,13 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   const [reports, setReports] = useState(() => {
-    const saved = localStorage.getItem('eco_reports_qashqadaryo_v4');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('eco_reports_qashqadaryo_v4');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("LocalStorage o'qishda xatolik:", e);
+      return [];
+    }
   });
 
   const [selectedDistrict, setSelectedDistrict] = useState('');
@@ -72,9 +77,9 @@ export default function App() {
     cleaningArea: '',
     flowersCount: '',
     reporterName: '',
-    photos: [], // Bir nechta rasmlar masivi (base64)
-    cadastrePdf: null, // { name, url }
-    govServicePdf: null // { name, url }
+    photos: [], 
+    cadastrePdf: null, 
+    govServicePdf: null 
   });
 
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -100,11 +105,17 @@ export default function App() {
     govServicePdf: null
   });
 
+  // LocalStorage to'lib ketishi va App qulashini oldini olish
   useEffect(() => {
-    localStorage.setItem('eco_reports_qashqadaryo_v4', JSON.stringify(reports));
+    try {
+      localStorage.setItem('eco_reports_qashqadaryo_v4', JSON.stringify(reports));
+    } catch (e) {
+      console.error("QuotaExceededError tutildi! LocalStorage to'lib ketgan.", e);
+      alert("Brauzerning xotirasi (LocalStorage) to'lib ketdi! Ba'zi fayllar saqlanmasligi mumkin.");
+    }
   }, [reports]);
 
-  // Bir nechta rasmlarni yuklash
+  // Bir nechta rasmlarni yuklash (Hajmini cheklash bilan)
   const handleMultipleImages = (e, isEdit = false) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -113,8 +124,9 @@ export default function App() {
     let processed = 0;
 
     files.forEach(file => {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`${file.name} hajmi 5MB dan katta! Yuborilmadi.`);
+      // LocalStorage limitini buzmaslik uchun rasm hajmini maksimum 1MB bilan cheklaymiz
+      if (file.size > 1 * 1024 * 1024) {
+        alert(`${file.name} hajmi juda katta (1MB dan kichik rasm yuklang)!`);
         return;
       }
       const reader = new FileReader();
@@ -133,23 +145,20 @@ export default function App() {
     });
   };
 
-  // PDF Faylni o'qish va URL yaratish
+  // PDF Faylni URL.createObjectURL orqali o'qish (Base64 ishlatmasdan xotirani tejash)
   const handlePdfUpload = (e, fieldName, isEdit = false) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const pdfData = {
-          name: file.name,
-          url: reader.result
-        };
-        if (isEdit) {
-          setEditFormData(prev => ({ ...prev, [fieldName]: pdfData }));
-        } else {
-          setFormData(prev => ({ ...prev, [fieldName]: pdfData }));
-        }
+      // PDF faylni local blob URL ga o'tkazamiz
+      const pdfData = {
+        name: file.name,
+        url: URL.createObjectURL(file) 
       };
-      reader.readAsDataURL(file);
+      if (isEdit) {
+        setEditFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+      } else {
+        setFormData(prev => ({ ...prev, [fieldName]: pdfData }));
+      }
     }
   };
 
@@ -382,7 +391,7 @@ export default function App() {
                     </label>
                     <input
                       type="text"
-                      placeholder="4-Oilaviy poliklinika"
+                      placeholder="Masalan: 12-maktab, Tumangaz"
                       value={formData.institutionName}
                       onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"

@@ -14,18 +14,7 @@ import {
   Users,
   Trash2,
   Edit3,
-  X,
-  Image as ImageIcon,
-  Calendar,
-  Upload,
-  FileText,
-  Building2,
-  XCircle,
-  Clock,
-  AlertCircle,
-  RefreshCw,
-  Eye,
-  Download
+  X
 } from 'lucide-react';
 
 const REGIONS = [
@@ -35,19 +24,16 @@ const REGIONS = [
     districts: [
       'Qarshi sh.', 
       'Shahrisabz sh.', 
-      'Dehqonobod t.', 
-      'G‘uzor t.', 
-      'Ko‘kdala t.', 
-      'Kamashi t.', 
-      'Karshi t.', 
-      'Koson t.', 
-      'Kasbi t.', 
       'Kitob t.', 
-      'Mirishkor t.', 
-      'Muborak t.', 
-      'Nishon t.', 
-      'Shahrisabz t.', 
+      'Shaxrisabz t.', 
+      'Qarshi t.', 
+      'Koson t.', 
       'Chiroqchi t.', 
+      'G‘uzor t.', 
+      'Dehqonobod t.', 
+      'Mirishkor t.', 
+      'Nishon t.', 
+      'Kamashi t.', 
       'Yakkabog‘ t.'
     ] 
   }
@@ -55,112 +41,40 @@ const REGIONS = [
 
 export default function App() {
   const [role, setRole] = useState('user'); 
-  const [activeTab, setActiveTab] = useState('reports');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
 
   const [reports, setReports] = useState(() => {
-    try {
-      const saved = localStorage.getItem('eco_reports_qashqadaryo_v4');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("LocalStorage o'qishda xatolik:", e);
-      return [];
-    }
+    const saved = localStorage.getItem('eco_reports_qashqadaryo');
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [formData, setFormData] = useState({
-    institutionName: '',
     treesCount: '',
     cleaningArea: '',
     flowersCount: '',
     reporterName: '',
-    photos: [], 
-    cadastrePdf: null, 
-    govServicePdf: null 
+    photoUrl: ''
   });
-
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedGalleryDistrict, setSelectedGalleryDistrict] = useState('all');
 
-  // Rad etish modal
-  const [rejectingId, setRejectingId] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
-
-  // Tahrirlash modal
+  // Tahrirlash uchun state
   const [editingReportId, setEditingReportId] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
     district: '',
-    institutionName: '',
     trees: '',
     cleaning: '',
     flowers: '',
-    reporter: '',
-    photos: [],
-    cadastrePdf: null,
-    govServicePdf: null
+    reporter: ''
   });
 
-  // LocalStorage to'lib ketishi va App qulashini oldini olish
   useEffect(() => {
-    try {
-      localStorage.setItem('eco_reports_qashqadaryo_v4', JSON.stringify(reports));
-    } catch (e) {
-      console.error("QuotaExceededError tutildi! LocalStorage to'lib ketgan.", e);
-      alert("Brauzerning xotirasi (LocalStorage) to'lib ketdi! Ba'zi fayllar saqlanmasligi mumkin.");
-    }
+    localStorage.setItem('eco_reports_qashqadaryo', JSON.stringify(reports));
   }, [reports]);
-
-  // Bir nechta rasmlarni yuklash (Hajmini cheklash bilan)
-  const handleMultipleImages = (e, isEdit = false) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
-
-    const newPhotos = [];
-    let processed = 0;
-
-    files.forEach(file => {
-      // LocalStorage limitini buzmaslik uchun rasm hajmini maksimum 1MB bilan cheklaymiz
-      if (file.size > 1 * 1024 * 1024) {
-        alert(`${file.name} hajmi juda katta (1MB dan kichik rasm yuklang)!`);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        newPhotos.push(reader.result);
-        processed++;
-        if (processed === files.length) {
-          if (isEdit) {
-            setEditFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
-          } else {
-            setFormData(prev => ({ ...prev, photos: [...prev.photos, ...newPhotos] }));
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // PDF Faylni URL.createObjectURL orqali o'qish (Base64 ishlatmasdan xotirani tejash)
-  const handlePdfUpload = (e, fieldName, isEdit = false) => {
-    const file = e.target.files[0];
-    if (file) {
-      // PDF faylni local blob URL ga o'tkazamiz
-      const pdfData = {
-        name: file.name,
-        url: URL.createObjectURL(file) 
-      };
-      if (isEdit) {
-        setEditFormData(prev => ({ ...prev, [fieldName]: pdfData }));
-      } else {
-        setFormData(prev => ({ ...prev, [fieldName]: pdfData }));
-      }
-    }
-  };
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
@@ -170,7 +84,7 @@ export default function App() {
       setPasswordInput('');
       setAuthError('');
     } else {
-      setAuthError('Parol noto\'g\'ri!');
+      setAuthError('Parol noto\'g\'ri! Qaytadan urinib ko\'ring.');
     }
   };
 
@@ -185,75 +99,43 @@ export default function App() {
       id: Date.now(),
       region: 'Qashqadaryo viloyati',
       district: selectedDistrict,
-      institution: formData.institutionName || 'Ko\'rsatilmadi',
       trees: Number(formData.treesCount) || 0,
       cleaning: Number(formData.cleaningArea) || 0,
       flowers: Number(formData.flowersCount) || 0,
       reporter: formData.reporterName,
-      photos: formData.photos.length > 0 ? formData.photos : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'],
-      cadastrePdf: formData.cadastrePdf,
-      govServicePdf: formData.govServicePdf,
-      date: new Date().toLocaleDateString('uz-UZ'),
-      status: 'pending',
-      rejectReason: ''
+      photo: formData.photoUrl || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400',
+      date: new Date().toLocaleDateString('uz-UZ')
     };
 
     setReports([newReport, ...reports]);
     setSubmitSuccess(true);
-    setFormData({
-      institutionName: '',
-      treesCount: '',
-      cleaningArea: '',
-      flowersCount: '',
-      reporterName: '',
-      photos: [],
-      cadastrePdf: null,
-      govServicePdf: null
-    });
+    setFormData({ treesCount: '', cleaningArea: '', flowersCount: '', reporterName: '', photoUrl: '' });
     setSelectedDistrict('');
     
     setTimeout(() => setSubmitSuccess(false), 4000);
   };
 
-  const handleApprove = (id) => {
-    setReports(reports.map(r => r.id === id ? { ...r, status: 'approved', rejectReason: '' } : r));
-  };
-
-  const handleOpenRejectModal = (id) => {
-    setRejectingId(id);
-    setRejectReason('');
-  };
-
-  const handleConfirmReject = (e) => {
-    e.preventDefault();
-    setReports(reports.map(r => r.id === rejectingId ? { ...r, status: 'rejected', rejectReason: rejectReason || 'Ma\'lumotlar xato kiritilgan.' } : r));
-    setRejectingId(null);
-  };
-
+  // O'chirish funksiyasi
   const handleDeleteReport = (id) => {
     if (window.confirm('Rostdan ham ushbu hisobotni o\'chirmoqchimisiz?')) {
       setReports(reports.filter(r => r.id !== id));
     }
   };
 
-  // Tahrirlashni ochish
+  // Tahrirlashni boshlash
   const handleOpenEditModal = (report) => {
     setEditingReportId(report.id);
     setEditFormData({
       district: report.district,
-      institutionName: report.institution,
       trees: report.trees,
       cleaning: report.cleaning,
       flowers: report.flowers,
-      reporter: report.reporter,
-      photos: report.photos || [],
-      cadastrePdf: report.cadastrePdf || null,
-      govServicePdf: report.govServicePdf || null
+      reporter: report.reporter
     });
     setIsEditModalOpen(true);
   };
 
-  // Tahrirni saqlash
+  // Tahrirlangan ma'lumotni saqlash
   const handleSaveEdit = (e) => {
     e.preventDefault();
     setReports(reports.map(r => {
@@ -261,16 +143,10 @@ export default function App() {
         return {
           ...r,
           district: editFormData.district,
-          institution: editFormData.institutionName,
           trees: Number(editFormData.trees) || 0,
           cleaning: Number(editFormData.cleaning) || 0,
           flowers: Number(editFormData.flowers) || 0,
-          reporter: editFormData.reporter,
-          photos: editFormData.photos,
-          cadastrePdf: editFormData.cadastrePdf,
-          govServicePdf: editFormData.govServicePdf,
-          status: 'pending',
-          rejectReason: ''
+          reporter: editFormData.reporter
         };
       }
       return r;
@@ -281,14 +157,8 @@ export default function App() {
 
   const filteredReports = reports.filter(r => 
     r.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.institution.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.reporter.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const galleryReports = reports.filter(r => {
-    if (selectedGalleryDistrict === 'all') return true;
-    return r.district === selectedGalleryDistrict;
-  });
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
@@ -302,7 +172,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-bold text-lg leading-tight">Qashqadaryo Eco-Kadastr</h1>
-              <p className="text-xs text-emerald-200">Obodonlashtirish va Kadastr platformasi</p>
+              <p className="text-xs text-emerald-200">Obodonlashtirish ishlarini nazorat qilish</p>
             </div>
           </div>
 
@@ -333,40 +203,36 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
+      {/* ASOSIY TANA */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         
         {role === 'user' && (
-          <div className="max-w-3xl mx-auto space-y-8">
-            
-            {/* HISOBOT YUBORISH FORMASI */}
+          <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
               <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
                 <PlusCircle className="w-6 h-6 text-emerald-600" />
                 <div>
-                  <h2 className="text-xl font-bold text-slate-800">Yangi Hisobot va Kadastr Ma'lumotlarini Yuborish</h2>
-                  <p className="text-xs text-slate-500">Qashqadaryo viloyati hududiy va muassasalar bo'yicha</p>
+                  <h2 className="text-xl font-bold text-slate-800">Yangi Hisobot Yuborish</h2>
+                  <p className="text-xs text-slate-500">Qashqadaryo viloyati hududiy ishlar ma'lumotlari</p>
                 </div>
               </div>
 
               {submitSuccess && (
                 <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                  <span className="text-sm font-medium">Hisobot muvaffaqiyatli saqlandi va Viloyat Adminiga ko'rib chiqish uchun yuborildi!</span>
+                  <span className="text-sm font-medium">Hisobot muvaffaqiyatli saqlandi va Viloyat darajasiga yuborildi!</span>
                 </div>
               )}
 
               <form onSubmit={handleSubmitReport} className="space-y-4">
-                
-                {/* HUDUD VA MUASSASA */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Viloyat</label>
                     <input
                       type="text"
                       value="Qashqadaryo viloyati"
                       disabled
-                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 font-medium cursor-not-allowed"
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-600 font-medium cursor-not-allowed"
                     />
                   </div>
 
@@ -375,7 +241,7 @@ export default function App() {
                     <select
                       value={selectedDistrict}
                       onChange={(e) => setSelectedDistrict(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       required
                     >
                       <option value="">-- Tanlang --</option>
@@ -384,23 +250,8 @@ export default function App() {
                       ))}
                     </select>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                      <Building2 className="w-3.5 h-3.5 text-sky-600" /> Muassasa nomi
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Masalan: 12-maktab, Tumangaz"
-                      value={formData.institutionName}
-                      onChange={(e) => setFormData({...formData, institutionName: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
-                      required
-                    />
-                  </div>
                 </div>
 
-                {/* KO'RSATKICHLAR */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
@@ -411,7 +262,7 @@ export default function App() {
                       placeholder="0"
                       value={formData.treesCount}
                       onChange={(e) => setFormData({...formData, treesCount: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
 
@@ -424,7 +275,7 @@ export default function App() {
                       placeholder="0"
                       value={formData.cleaningArea}
                       onChange={(e) => setFormData({...formData, cleaningArea: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
 
@@ -437,12 +288,11 @@ export default function App() {
                       placeholder="0"
                       value={formData.flowersCount}
                       onChange={(e) => setFormData({...formData, flowersCount: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
                 </div>
 
-                {/* MAS'UL VA BIR NECHTA RASM YUKLASH */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Mas'ul xodim (F.I.SH)</label>
@@ -451,63 +301,20 @@ export default function App() {
                       placeholder="Masalan: A. Karimov"
                       value={formData.reporterName}
                       onChange={(e) => setFormData({...formData, reporterName: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Foto hisobotlar (Ko'p rasm tanlash mumkin)</label>
-                    <div className="relative border border-slate-200 rounded-xl bg-slate-50 p-2 flex items-center gap-2">
-                      <Upload className="w-4 h-4 text-slate-400 ml-2" />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={(e) => handleMultipleImages(e, false)}
-                        className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer"
-                      />
-                    </div>
-                    {formData.photos.length > 0 && (
-                      <p className="text-[11px] text-emerald-600 mt-1 font-medium">✓ {formData.photos.length} ta rasm yuklandi</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* PDF FAYLLAR BO'LIMI */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 pt-3">
-                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-emerald-600" /> Rasmiy PDF Hujjatlarni Yuklash
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">1. Kadastr ma'lumotlari (PDF)</label>
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => handlePdfUpload(e, 'cadastrePdf', false)}
-                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                        required
-                      />
-                      {formData.cadastrePdf && (
-                        <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.cadastrePdf.name}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">2. Davlat xizmati hujjati (PDF)</label>
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => handlePdfUpload(e, 'govServicePdf', false)}
-                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                        required
-                      />
-                      {formData.govServicePdf && (
-                        <p className="text-[10px] text-sky-600 mt-1 truncate">Yuklandi: {formData.govServicePdf.name}</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Foto havola (URL)</label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={formData.photoUrl}
+                      onChange={(e) => setFormData({...formData, photoUrl: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
                   </div>
                 </div>
 
@@ -519,75 +326,9 @@ export default function App() {
                 </button>
               </form>
             </div>
-
-            {/* YUBORILGAN HISOBOTLAR STATUSI */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-500" /> Yuborilgan hisobotlar holati
-              </h3>
-
-              <div className="space-y-4">
-                {reports.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-4">Hozircha hech qanday hisobot yuborilmagan.</p>
-                ) : (
-                  reports.map((item) => (
-                    <div key={item.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 flex flex-col justify-between gap-3">
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800 text-sm">{item.district}</span>
-                            <span className="text-xs text-slate-500">({item.institution})</span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-0.5">Sana: {item.date} | Mas'ul: {item.reporter}</p>
-                        </div>
-
-                        <div>
-                          {item.status === 'pending' && (
-                            <span className="bg-amber-100 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5" /> Tekshirilmoqda
-                            </span>
-                          )}
-                          {item.status === 'approved' && (
-                            <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Tasdiqlandi
-                            </span>
-                          )}
-                          {item.status === 'rejected' && (
-                            <span className="bg-rose-100 text-rose-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
-                              <XCircle className="w-3.5 h-3.5 text-rose-600" /> Qaytarib yuborildi
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Rad etilgan bo'lsa xatolik va TAHRIRLASH */}
-                      {item.status === 'rejected' && (
-                        <div className="mt-1 p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-                          <div className="flex items-start gap-2 text-xs text-rose-800">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600 mt-0.5" />
-                            <div>
-                              <span className="font-bold">Xatolik sababi:</span> {item.rejectReason}
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => handleOpenEditModal(item)}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 flex-shrink-0 shadow"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" /> Qayta tahrirlash va yuborish
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
           </div>
         )}
 
-        {/* ADMIN PANEL */}
         {role === 'admin' && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -595,36 +336,14 @@ export default function App() {
                 <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-md uppercase tracking-wide">
                   Qashqadaryo Viloyati Darajasi
                 </span>
-                <h2 className="text-2xl font-bold text-slate-800 mt-1">Umumiy Obodonlashtirish & Kadastr Nazorati</h2>
+                <h2 className="text-2xl font-bold text-slate-800 mt-1">Umumiy Obodonlashtirish Statistikasi</h2>
               </div>
-
-              <div className="flex items-center gap-3">
-                <div className="bg-slate-100 p-1 rounded-xl flex gap-1">
-                  <button
-                    onClick={() => setActiveTab('reports')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                      activeTab === 'reports' ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Jadval va Tekshirish
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('gallery')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
-                      activeTab === 'gallery' ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <ImageIcon className="w-3.5 h-3.5 text-emerald-600" /> Foto Galereya
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => setRole('user')}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
-                >
-                  <LogOut className="w-4 h-4" /> Chiqish
-                </button>
-              </div>
+              <button
+                onClick={() => setRole('user')}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
+              >
+                <LogOut className="w-4 h-4" /> Admin rejimdan chiqish
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -665,275 +384,88 @@ export default function App() {
               </div>
             </div>
 
-            {/* JADVAL TABI (ADMIN) */}
-            {activeTab === 'reports' && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-emerald-600" /> Tuman va Muassasalar Hisobotlari
-                  </h3>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-600" /> Tumanlar kesimidagi hisobotlar
+                </h3>
 
-                  <div className="relative w-full md:w-64">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                    <input
-                      type="text"
-                      placeholder="Qidirish (Tuman, muassasa)..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
-                    />
-                  </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Qidirish (Tuman, mas'ul)..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
                 </div>
+              </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600">
-                    <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-100">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                    <tr>
+                      <th className="p-4">Tuman / Shahar</th>
+                      <th className="p-4">Daraxtlar</th>
+                      <th className="p-4">Tozalash (m²)</th>
+                      <th className="p-4">Gullar</th>
+                      <th className="p-4">Mas'ul</th>
+                      <th className="p-4">Sana</th>
+                      <th className="p-4 text-right">Amallar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredReports.length === 0 ? (
                       <tr>
-                        <th className="p-4">Tuman va Muassasa</th>
-                        <th className="p-4">Daraxt/Tozalash/Gul</th>
-                        <th className="p-4">PDF Hujjatlar (Ochish / Yuklash)</th>
-                        <th className="p-4">Mas'ul / Sana</th>
-                        <th className="p-4">Status</th>
-                        <th className="p-4 text-right">Tasdiqlash / Amallar</th>
+                        <td colSpan="7" className="p-8 text-center text-slate-400">
+                          Hozircha hech qanday hisobot kelib tushmagan.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredReports.length === 0 ? (
-                        <tr>
-                          <td colSpan="6" className="p-8 text-center text-slate-400">
-                            Hozircha hech qanday hisobot kelib tushmagan.
+                    ) : (
+                      filteredReports.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-4 font-semibold text-slate-800">
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                              {item.district}
+                            </div>
+                          </td>
+                          <td className="p-4 font-medium text-emerald-700">{item.trees.toLocaleString()} dona</td>
+                          <td className="p-4 font-medium text-amber-700">{item.cleaning.toLocaleString()} m²</td>
+                          <td className="p-4 font-medium text-rose-700">{item.flowers.toLocaleString()} dona</td>
+                          <td className="p-4 font-medium text-slate-700">{item.reporter}</td>
+                          <td className="p-4 text-slate-400">{item.date}</td>
+                          <td className="p-4 text-right space-x-2">
+                            <button
+                              onClick={() => handleOpenEditModal(item)}
+                              className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg transition inline-flex items-center"
+                              title="Tahrirlash"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteReport(item.id)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition inline-flex items-center"
+                              title="O'chirish"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </td>
                         </tr>
-                      ) : (
-                        filteredReports.map((item) => (
-                          <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                            <td className="p-4 font-semibold text-slate-800">
-                              <div className="flex items-center gap-1.5">
-                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                {item.district}
-                              </div>
-                              <div className="text-[11px] font-normal text-sky-700 flex items-center gap-1 mt-0.5">
-                                <Building2 className="w-3 h-3" /> {item.institution}
-                              </div>
-                            </td>
-                            <td className="p-4 space-y-0.5">
-                              <div className="text-emerald-700 font-medium">{item.trees} dona daraxt</div>
-                              <div className="text-amber-700 font-medium">{item.cleaning} m² tozalash</div>
-                              <div className="text-rose-700 font-medium">{item.flowers} dona gul</div>
-                            </td>
-                            
-                            {/* PDF Fayllarni ochish va yuklash tugmalari */}
-                            <td className="p-4 space-y-1.5">
-                              {item.cadastrePdf ? (
-                                <a 
-                                  href={item.cadastrePdf.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="flex items-center gap-1.5 text-[11px] text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-md border border-sky-200 transition font-medium"
-                                >
-                                  <FileText className="w-3.5 h-3.5" /> 
-                                  <span className="truncate max-w-[120px]">Kadastr: {item.cadastrePdf.name}</span>
-                                  <Eye className="w-3 h-3 ml-auto text-sky-600" />
-                                </a>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 block">Kadastr: Yuklanmagan</span>
-                              )}
-
-                              {item.govServicePdf ? (
-                                <a 
-                                  href={item.govServicePdf.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="flex items-center gap-1.5 text-[11px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200 transition font-medium"
-                                >
-                                  <FileText className="w-3.5 h-3.5" /> 
-                                  <span className="truncate max-w-[120px]">Davlat xizmati: {item.govServicePdf.name}</span>
-                                  <Eye className="w-3 h-3 ml-auto text-indigo-600" />
-                                </a>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 block">Davlat xizmati: Yuklanmagan</span>
-                              )}
-                            </td>
-
-                            <td className="p-4">
-                              <div className="font-medium text-slate-700">{item.reporter}</div>
-                              <div className="text-[10px] text-slate-400">{item.date}</div>
-                            </td>
-                            <td className="p-4">
-                              {item.status === 'pending' && (
-                                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-md">Kutilmoqda</span>
-                              )}
-                              {item.status === 'approved' && (
-                                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-1 rounded-md">Tasdiqlandi</span>
-                              )}
-                              {item.status === 'rejected' && (
-                                <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2.5 py-1 rounded-md">Rad etildi</span>
-                              )}
-                            </td>
-                            <td className="p-4 text-right space-x-1">
-                              {item.status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleApprove(item.id)}
-                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition inline-flex items-center gap-1"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Qabul
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenRejectModal(item.id)}
-                                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition inline-flex items-center gap-1"
-                                  >
-                                    <XCircle className="w-3.5 h-3.5" /> Rad
-                                  </button>
-                                </>
-                              )}
-
-                              <button
-                                onClick={() => handleOpenEditModal(item)}
-                                className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg transition inline-flex items-center ml-1"
-                                title="Tahrirlash"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteReport(item.id)}
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition inline-flex items-center"
-                                title="O'chirish"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
-
-            {/* FOTO GALEREYA TABI (KO'P RASMLAR KO'RINISHI) */}
-            {activeTab === 'gallery' && (
-              <div className="space-y-6">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-emerald-600" />
-                    <span className="text-xs font-semibold text-slate-700">Tuman bo'yicha saralash:</span>
-                  </div>
-
-                  <select
-                    value={selectedGalleryDistrict}
-                    onChange={(e) => setSelectedGalleryDistrict(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="all">Barcha Tuman va Shaharlar</option>
-                    {REGIONS[0].districts.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {galleryReports.length === 0 ? (
-                  <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-400 text-sm">
-                    Ushbu tuman bo'yicha hech qanday foto hisobot yuklanmagan.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    {galleryReports.map((item) => (
-                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition">
-                        
-                        {/* Bir nechta rasmlar galereyasi */}
-                        <div className="p-2 bg-slate-100 grid grid-cols-2 gap-1.5 h-48 overflow-y-auto">
-                          {Array.isArray(item.photos) && item.photos.length > 0 ? (
-                            item.photos.map((imgUrl, imgIndex) => (
-                              <img
-                                key={imgIndex}
-                                src={imgUrl}
-                                alt={`${item.district}-${imgIndex}`}
-                                className="w-full h-20 object-cover rounded-lg border border-slate-200"
-                              />
-                            ))
-                          ) : (
-                            <img src={item.photo || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400'} alt="foto" className="w-full h-full object-cover col-span-2 rounded-lg" />
-                          )}
-                        </div>
-
-                        <div className="p-4 space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-slate-800">{item.district}</span>
-                            <span className="font-semibold text-sky-700">{item.institution}</span>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-1 pt-2 border-t border-slate-100 text-[11px] text-center">
-                            <div className="bg-emerald-50 p-1.5 rounded-lg">
-                              <span className="block text-emerald-700 font-bold">{item.trees}</span>
-                              <span className="text-[9px] text-emerald-600">Daraxt</span>
-                            </div>
-                            <div className="bg-amber-50 p-1.5 rounded-lg">
-                              <span className="block text-amber-700 font-bold">{item.cleaning}</span>
-                              <span className="text-[9px] text-amber-600">Tozalash</span>
-                            </div>
-                            <div className="bg-rose-50 p-1.5 rounded-lg">
-                              <span className="block text-rose-700 font-bold">{item.flowers}</span>
-                              <span className="text-[9px] text-rose-600">Gul</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </div>
-            )}
+            </div>
 
           </div>
         )}
 
       </main>
 
-      {/* RAD ETISH MODALI */}
-      {rejectingId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100">
-            <div className="text-center mb-4">
-              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <XCircle className="w-6 h-6 text-rose-600" />
-              </div>
-              <h3 className="font-bold text-slate-800 text-base">Hisobotni Rad Etish</h3>
-              <p className="text-xs text-slate-500 mt-1">Tumanga yuboriladigan xatolik sababini kiriting:</p>
-            </div>
-
-            <form onSubmit={handleConfirmReject} className="space-y-4">
-              <textarea
-                placeholder="Masalan: Kadastr PDF hujjati noto'g'ri yuklangan..."
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-rose-500 outline-none h-24"
-                required
-              />
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRejectingId(null)}
-                  className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl transition"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  type="submit"
-                  className="w-1/2 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow"
-                >
-                  Rad etish va Yuborish
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* PAROL MODALI */}
+      {/* PAROL SO'RASH MODALI */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100">
@@ -984,13 +516,13 @@ export default function App() {
         </div>
       )}
 
-      {/* TAHRIRLASH MODALI (RASM VA PDF LARNI O'ZGARTIRISH BILAN) */}
+      {/* TAHRIRLASH MODALI (EDIT MODAL) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash va Qayta Yuborish
+                <Edit3 className="w-5 h-5 text-sky-600" /> Hisobotni Tahrirlash
               </h3>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
@@ -1001,31 +533,18 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Tuman / Shahar</label>
-                  <select
-                    value={editFormData.district}
-                    onChange={(e) => setEditFormData({...editFormData, district: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
-                    required
-                  >
-                    {REGIONS[0].districts.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Muassasa nomi</label>
-                  <input
-                    type="text"
-                    value={editFormData.institutionName}
-                    onChange={(e) => setEditFormData({...editFormData, institutionName: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
-                    required
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Tuman / Shahar</label>
+                <select
+                  value={editFormData.district}
+                  onChange={(e) => setEditFormData({...editFormData, district: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
+                  required
+                >
+                  {REGIONS[0].districts.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
@@ -1069,50 +588,6 @@ export default function App() {
                 />
               </div>
 
-              {/* TAHRIRLASHDA RASMLARNI O'ZGARTIRISH */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Yangi foto hisobotlar yuklash (ixtiyoriy)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => handleMultipleImages(e, true)}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 cursor-pointer"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Hozirgi rasmlar soni: {editFormData.photos.length} ta</p>
-              </div>
-
-              {/* TAHRIRLASHDA PDF FAYLLARNI O'ZGARTIRISH */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                <span className="text-xs font-bold text-slate-700 block">PDF Hujjatlarni yangilash:</span>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 mb-0.5">1. Kadastr PDF</label>
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => handlePdfUpload(e, 'cadastrePdf', true)}
-                    className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
-                  />
-                  {editFormData.cadastrePdf && (
-                    <span className="text-[10px] text-emerald-600 block mt-0.5">Mavjud: {editFormData.cadastrePdf.name}</span>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 mb-0.5">2. Davlat xizmati PDF</label>
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => handlePdfUpload(e, 'govServicePdf', true)}
-                    className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-slate-200 cursor-pointer"
-                  />
-                  {editFormData.govServicePdf && (
-                    <span className="text-[10px] text-emerald-600 block mt-0.5">Mavjud: {editFormData.govServicePdf.name}</span>
-                  )}
-                </div>
-              </div>
-
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -1123,9 +598,9 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow flex items-center justify-center gap-1.5"
+                  className="w-1/2 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl transition shadow"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Saqlash va Yuborish
+                  Saqlash
                 </button>
               </div>
             </form>
